@@ -79,7 +79,8 @@ export class GroqProvider extends BaseProvider {
   }
 
   public supportsTools(): boolean {
-    return true;
+    // Groq always supports tools, but respect config if set
+    return this.config.supports_tools !== false;
   }
 
   public static getDefaultModels(): ModelInfo[] {

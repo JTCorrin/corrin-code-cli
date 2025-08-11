@@ -103,13 +103,14 @@ export default function Chat({ agent }: ChatProps) {
       
       // Handle slash commands
       if (message.startsWith('/')) {
-        handleSlashCommand(message, {
+        await handleSlashCommand(message, {
           addMessage,
           clearHistory,
           setShowLogin,
           setShowModelSelector,
           toggleReasoning,
           showReasoning,
+          sendMessage,
         });
         return;
       }

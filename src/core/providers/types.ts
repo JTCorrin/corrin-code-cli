@@ -12,6 +12,7 @@ export interface ProviderConfig {
   base_url?: string;
   api_key?: string;
   models: ModelInfo[];
+  supports_tools?: boolean; // Optional, defaults to true
 }
 
 export interface ChatMessage {

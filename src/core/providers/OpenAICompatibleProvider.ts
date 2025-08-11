@@ -120,8 +120,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   public supportsTools(): boolean {
-    // Most local providers have limited or no tool support
-    // This can be made configurable per provider if needed
-    return false;
+    // Default to true unless explicitly disabled in config
+    return this.config.supports_tools !== false;
   }
 }
