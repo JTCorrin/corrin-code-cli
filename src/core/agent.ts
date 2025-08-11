@@ -1,8 +1,8 @@
-import Groq from 'groq-sdk';
 import { executeTool } from '../tools/tools.js';
 import { validateReadBeforeEdit, getReadBeforeEditError } from '../tools/validators.js';
 import { ALL_TOOL_SCHEMAS, DANGEROUS_TOOLS, APPROVAL_REQUIRED_TOOLS } from '../tools/tool-schemas.js';
 import { ConfigManager } from '../utils/local-settings.js';
+import { ProviderManager, BaseProvider, GroqProvider } from './providers/index.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,9 +14,9 @@ interface Message {
 }
 
 export class Agent {
-  private client: Groq | null = null;
+  private providerManager: ProviderManager;
+  private currentProvider: BaseProvider | null = null;
   private messages: Message[] = [];
-  private apiKey: string | null = null;
   private model: string;
   private temperature: number;
   private sessionAutoApprove: boolean = false;
@@ -42,6 +42,7 @@ export class Agent {
     this.model = model;
     this.temperature = temperature;
     this.configManager = new ConfigManager();
+    this.providerManager = new ProviderManager();
     
     // Set debug mode
     debugEnabled = debug || false;
@@ -55,6 +56,9 @@ export class Agent {
 
     // Add system message to conversation
     this.messages.push({ role: 'system', content: this.systemMessage });
+    
+    // Initialize providers
+    this.initializeProviders();
   }
 
   static async create(
@@ -74,11 +78,16 @@ export class Agent {
       systemMessage,
       debug
     );
+    
+    // Set current provider based on model
+    await agent.setModelAndProvider(selectedModel);
+    
     return agent;
   }
 
   private buildDefaultSystemMessage(): string {
-    return `You are a coding assistant powered by ${this.model} on Groq. Tools are available to you. Use tools to complete tasks.
+    const providerName = this.currentProvider?.getName() || 'AI';
+    return `You are a coding assistant powered by ${this.model} via ${providerName}. Tools are available to you. Use tools to complete tasks.
 
 CRITICAL: For ANY implementation request (building apps, creating components, writing code), you MUST use tools to create actual files. NEVER provide text-only responses for coding tasks that require implementation.
 
@@ -127,7 +136,69 @@ Be direct and efficient.
 
 Don't generate markdown tables.
 
-When asked about your identity, you should identify yourself as a coding assistant running on the ${this.model} model via Groq.`;
+When asked about your identity, you should identify yourself as a coding assistant running on the ${this.model} model via ${providerName}.`;
+  }
+
+  private initializeProviders(): void {
+    // Load custom providers from config
+    const customProviders = this.configManager.getProviders();
+    
+    // Register custom providers
+    for (const [providerId, config] of Object.entries(customProviders)) {
+      try {
+        this.providerManager.registerProvider(providerId, config);
+      } catch (error) {
+        debugLog(`Failed to register provider ${providerId}:`, error);
+      }
+    }
+    
+    // Always ensure default Groq provider exists
+    if (!this.providerManager.getProvider('groq')) {
+      this.providerManager.registerProvider('groq', {
+        name: 'Groq',
+        type: 'groq',
+        models: GroqProvider.getDefaultModels()
+      });
+    }
+  }
+
+  private async setModelAndProvider(modelId: string): Promise<void> {
+    // Find provider that has this model
+    const provider = this.providerManager.findProviderForModel(modelId);
+    
+    if (!provider) {
+      // If no provider found, assume it's a Groq model and add it to the default provider
+      const groqProvider = this.providerManager.getProvider('groq');
+      if (groqProvider) {
+        this.currentProvider = groqProvider;
+      } else {
+        throw new Error(`No provider found for model: ${modelId}`);
+      }
+    } else {
+      this.currentProvider = provider;
+    }
+    
+    // Set API key for the current provider
+    await this.initializeProviderApiKey();
+  }
+  
+  private async initializeProviderApiKey(): Promise<void> {
+    if (!this.currentProvider) return;
+    
+    const providerId = this.currentProvider.getProviderId();
+    
+    // Try environment variable first, then config
+    let apiKey: string | null = null;
+    
+    if (providerId === 'groq') {
+      apiKey = process.env.GROQ_API_KEY || this.configManager.getApiKey();
+    } else {
+      apiKey = this.configManager.getProviderApiKey(providerId);
+    }
+    
+    if (apiKey) {
+      this.currentProvider.setApiKey(apiKey);
+    }
   }
 
 
@@ -152,20 +223,37 @@ When asked about your identity, you should identify yourself as a coding assista
   public setApiKey(apiKey: string): void {
     debugLog('Setting API key in agent...');
     debugLog('API key provided:', apiKey ? `${apiKey.substring(0, 8)}...` : 'empty');
-    this.apiKey = apiKey;
-    this.client = new Groq({ apiKey });
-    debugLog('Groq client initialized with provided API key');
+    
+    if (this.currentProvider) {
+      this.currentProvider.setApiKey(apiKey);
+      const providerId = this.currentProvider.getProviderId();
+      
+      // Save to appropriate config location
+      if (providerId === 'groq') {
+        this.configManager.setApiKey(apiKey);
+      } else {
+        this.configManager.setProviderApiKey(providerId, apiKey);
+      }
+    }
+    debugLog('API key set for current provider');
   }
 
   public saveApiKey(apiKey: string): void {
-    this.configManager.setApiKey(apiKey);
     this.setApiKey(apiKey);
   }
 
   public clearApiKey(): void {
-    this.configManager.clearApiKey();
-    this.apiKey = null;
-    this.client = null;
+    if (this.currentProvider) {
+      const providerId = this.currentProvider.getProviderId();
+      this.currentProvider.setApiKey(null);
+      
+      // Clear from appropriate config location
+      if (providerId === 'groq') {
+        this.configManager.clearApiKey();
+      } else {
+        this.configManager.setProviderApiKey(providerId, '');
+      }
+    }
   }
 
   public clearHistory(): void {
@@ -173,11 +261,15 @@ When asked about your identity, you should identify yourself as a coding assista
     this.messages = this.messages.filter(msg => msg.role === 'system');
   }
 
-  public setModel(model: string): void {
+  public async setModel(model: string): Promise<void> {
     this.model = model;
     // Save as default model
     this.configManager.setDefaultModel(model);
-    // Update system message to reflect new model
+    
+    // Switch to appropriate provider
+    await this.setModelAndProvider(model);
+    
+    // Update system message to reflect new model and provider
     const newSystemMessage = this.buildDefaultSystemMessage();
     this.systemMessage = newSystemMessage;
     // Update the system message in the conversation
@@ -189,6 +281,14 @@ When asked about your identity, you should identify yourself as a coding assista
 
   public getCurrentModel(): string {
     return this.model;
+  }
+
+  public getAvailableModels() {
+    return this.providerManager.getAllModels();
+  }
+
+  public getProviderManager(): ProviderManager {
+    return this.providerManager;
   }
 
   public setSessionAutoApprove(enabled: boolean): void {
@@ -215,28 +315,33 @@ When asked about your identity, you should identify yourself as a coding assista
     // Reset interrupt flag at the start of a new chat
     this.isInterrupted = false;
     
-    // Check API key on first message send
-    if (!this.client) {
-      debugLog('Initializing Groq client...');
-      // Try environment variable first
-      const envApiKey = process.env.GROQ_API_KEY;
-      if (envApiKey) {
-        debugLog('Using API key from environment variable');
-        this.setApiKey(envApiKey);
-      } else {
-        // Try config file
-        debugLog('Environment variable GROQ_API_KEY not found, checking config file');
-        const configApiKey = this.configManager.getApiKey();
-        if (configApiKey) {
-          debugLog('Using API key from config file');
-          this.setApiKey(configApiKey);
-        } else {
-          debugLog('No API key found anywhere');
-          throw new Error('No API key available. Please use /login to set your Groq API key.');
-        }
-      }
-      debugLog('Groq client initialized successfully');
+    // Check if current provider is available and has API key
+    if (!this.currentProvider) {
+      await this.setModelAndProvider(this.model);
     }
+    
+    if (!this.currentProvider) {
+      throw new Error('No provider available for the current model.');
+    }
+    
+    // Initialize API key for provider if not already set
+    await this.initializeProviderApiKey();
+    
+    // Check provider status
+    const status = await this.currentProvider.checkStatus();
+    if (!status.connected) {
+      const providerId = this.currentProvider.getProviderId();
+      let errorMsg = `Provider ${this.currentProvider.getName()} is not available.`;
+      if (status.error) {
+        errorMsg += ` Error: ${status.error}`;
+      }
+      if (providerId === 'groq') {
+        errorMsg += ' Please use /login to set your Groq API key.';
+      }
+      throw new Error(errorMsg);
+    }
+    
+    debugLog('Provider initialized successfully:', this.currentProvider.getName());
 
     // Add user message
     this.messages.push({ role: 'user', content: userInput });
@@ -254,47 +359,40 @@ When asked about your identity, you should identify yourself as a coding assista
         }
         
         try {
-          // Check client exists
-          if (!this.client) {
-            throw new Error('Groq client not initialized');
+          // Check provider exists
+          if (!this.currentProvider) {
+            throw new Error('No provider available');
           }
 
-          debugLog('Making API call to Groq with model:', this.model);
+          debugLog(`Making API call via ${this.currentProvider.getName()} with model: ${this.model}`);
           debugLog('Messages count:', this.messages.length);
           debugLog('Last few messages:', this.messages.slice(-3));
           
-          // Prepare request body for curl logging
-          const requestBody = {
+          // Prepare request for provider
+          const request = {
             model: this.model,
             messages: this.messages,
-            tools: ALL_TOOL_SCHEMAS,
-            tool_choice: 'auto' as const,
             temperature: this.temperature,
             max_tokens: 8000,
-            stream: false as const
+            stream: false,
+            // Only include tools if provider supports them
+            ...(this.currentProvider.supportsTools() ? {
+              tools: ALL_TOOL_SCHEMAS,
+              tool_choice: 'auto' as const
+            } : {})
           };
           
-          // Log equivalent curl command
+          // Log request details
           this.requestCount++;
-          const curlCommand = generateCurlCommand(this.apiKey!, requestBody, this.requestCount);
-          if (curlCommand) {
-            debugLog('Equivalent curl command:', curlCommand);
-          }
+          debugLog('Request details:', request);
           
           // Create AbortController for this request
           this.currentAbortController = new AbortController();
           
-          const response = await this.client.chat.completions.create({
-            model: this.model,
-            messages: this.messages as any,
-            tools: ALL_TOOL_SCHEMAS,
-            tool_choice: 'auto',
-            temperature: this.temperature,
-            max_tokens: 8000,
-            stream: false
-          }, {
-            signal: this.currentAbortController.signal
-          });
+          const response = await this.currentProvider.createChatCompletion(
+            request,
+            this.currentAbortController.signal
+          );
 
           debugLog('Full API response received:', response);
           debugLog('Response usage:', response.usage);
@@ -596,20 +694,3 @@ function debugLog(message: string, data?: any) {
   fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
 }
 
-function generateCurlCommand(apiKey: string, requestBody: any, requestCount: number): string {
-  if (!debugEnabled) return '';
-  
-  const maskedApiKey = `${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 8)}`;
-  
-  // Write request body to JSON file
-  const jsonFileName = `debug-request-${requestCount}.json`;
-  const jsonFilePath = path.join(process.cwd(), jsonFileName);
-  fs.writeFileSync(jsonFilePath, JSON.stringify(requestBody, null, 2));
-  
-  const curlCmd = `curl -X POST "https://api.groq.com/openai/v1/chat/completions" \\
-  -H "Authorization: Bearer ${maskedApiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d @${jsonFileName}`;
-  
-  return curlCmd;
-}

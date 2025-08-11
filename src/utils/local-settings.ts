@@ -1,21 +1,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { ProviderConfig } from '../core/providers/types.js';
 
 interface Config {
   groqApiKey?: string;
   defaultModel?: string;
+  providers?: Record<string, ProviderConfig>;
 }
 
 const CONFIG_DIR = '.groq'; // In home directory
 const CONFIG_FILE = 'local-settings.json';
+const PROVIDERS_FILE = 'providers.json';
 
 export class ConfigManager {
   private configPath: string;
+  private providersPath: string;
 
   constructor() {
     const homeDir = os.homedir();
     this.configPath = path.join(homeDir, CONFIG_DIR, CONFIG_FILE);
+    this.providersPath = path.join(homeDir, CONFIG_DIR, PROVIDERS_FILE);
   }
 
   private ensureConfigDir(): void {
@@ -114,6 +119,85 @@ export class ConfigManager {
       });
     } catch (error) {
       throw new Error(`Failed to save default model: ${error}`);
+    }
+  }
+
+  public getProviders(): Record<string, ProviderConfig> {
+    try {
+      if (!fs.existsSync(this.providersPath)) {
+        return {};
+      }
+
+      const providersData = fs.readFileSync(this.providersPath, 'utf8');
+      const data = JSON.parse(providersData);
+
+      // Support both direct providers object and nested structure
+      if (data.providers) {
+        return data.providers;
+      }
+      return data;
+    } catch (error) {
+      console.warn('Failed to read providers config:', error);
+      return {};
+    }
+  }
+
+  public setProviders(providers: Record<string, ProviderConfig>): void {
+    try {
+      this.ensureConfigDir();
+
+      const data = { providers };
+
+      fs.writeFileSync(this.providersPath, JSON.stringify(data, null, 2), {
+        mode: 0o600 // Read/write for owner only
+      });
+    } catch (error) {
+      throw new Error(`Failed to save providers config: ${error}`);
+    }
+  }
+
+  public addProvider(providerId: string, config: ProviderConfig): void {
+    const providers = this.getProviders();
+    providers[providerId] = config;
+    this.setProviders(providers);
+  }
+
+  public removeProvider(providerId: string): boolean {
+    const providers = this.getProviders();
+    if (providerId in providers) {
+      delete providers[providerId];
+      this.setProviders(providers);
+      return true;
+    }
+    return false;
+  }
+
+  public hasProviders(): boolean {
+    const providers = this.getProviders();
+    return Object.keys(providers).length > 0;
+  }
+
+  // Legacy support - get API key for specific provider or default to groq
+  public getProviderApiKey(providerId: string): string | null {
+    if (providerId === 'groq') {
+      return this.getApiKey();
+    }
+
+    const providers = this.getProviders();
+    const provider = providers[providerId];
+    return provider?.api_key || null;
+  }
+
+  public setProviderApiKey(providerId: string, apiKey: string): void {
+    if (providerId === 'groq') {
+      this.setApiKey(apiKey);
+      return;
+    }
+
+    const providers = this.getProviders();
+    if (providers[providerId]) {
+      providers[providerId].api_key = apiKey;
+      this.setProviders(providers);
     }
   }
 }

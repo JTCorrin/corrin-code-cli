@@ -141,16 +141,23 @@ export default function Chat({ agent }: ChatProps) {
     });
   };
 
-  const handleModelSelect = (model: string) => {
+  const handleModelSelect = async (model: string) => {
     setShowModelSelector(false);
     // Clear chat history when switching models
     clearHistory();
-    // Set the new model on the agent
-    agent.setModel(model);
-    addMessage({
-      role: 'system',
-      content: `Switched to model: ${model}. Chat history has been cleared.`,
-    });
+    try {
+      // Set the new model on the agent (now async)
+      await agent.setModel(model);
+      addMessage({
+        role: 'system',
+        content: `Switched to model: ${model}. Chat history has been cleared.`,
+      });
+    } catch (error) {
+      addMessage({
+        role: 'system',
+        content: `Failed to switch to model ${model}: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   };
 
   const handleModelCancel = () => {
@@ -204,6 +211,7 @@ export default function Chat({ agent }: ChatProps) {
             onSubmit={handleModelSelect}
             onCancel={handleModelCancel}
             currentModel={agent.getCurrentModel?.() || undefined}
+            availableModels={agent.getAvailableModels?.() || []}
           />
         ) : showInput ? (
           <MessageInput
