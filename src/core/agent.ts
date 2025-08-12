@@ -353,6 +353,12 @@ When asked about your identity, you should identify yourself as a coding assista
 
     const maxIterations = 50;
     let iteration = 0;
+    
+    // Response loop detection to prevent infinite tool calling
+    let consecutiveToolIterations = 0;
+    let recentToolCalls: string[] = [];
+    const maxConsecutiveToolIterations = 10; // Warn after 10 consecutive tool calls
+    const toolCallHistorySize = 20; // Track last 20 tool calls for pattern detection
 
     while (true) { // Outer loop for iteration reset
       while (iteration < maxIterations) {
@@ -370,13 +376,19 @@ When asked about your identity, you should identify yourself as a coding assista
           }
 
           const startTime = Date.now();
-          log.debug(LogCategory.AGENT, `Making API call via ${this.currentProvider.getName()}`, {
+          // Get provider info for logging and provider-specific handling
+          const providerId = this.currentProvider.getProviderId();
+          const providerName = this.currentProvider.getName();
+          
+          log.debug(LogCategory.AGENT, `Making API call via ${providerName}`, {
             model: this.model,
             messageCount: this.messages.length,
             hasTools: this.currentProvider.supportsTools()
           });
           
-          // Prepare request for provider
+          // Prepare request for provider with provider-specific adjustments
+          const isOpenRouter = providerId === 'openrouter' || providerName.toLowerCase().includes('openrouter');
+          
           const request = {
             model: this.model,
             messages: this.messages,
@@ -386,9 +398,22 @@ When asked about your identity, you should identify yourself as a coding assista
             // Only include tools if provider supports them
             ...(this.currentProvider.supportsTools() ? {
               tools: ALL_TOOL_SCHEMAS,
-              tool_choice: 'auto' as const
+              // Use 'none' tool choice for Open Router after many consecutive tool calls to force text response
+              tool_choice: (isOpenRouter && consecutiveToolIterations >= maxConsecutiveToolIterations) 
+                ? 'none' as const 
+                : 'auto' as const
             } : {})
           };
+          
+          // Log provider-specific adjustments
+          if (isOpenRouter && consecutiveToolIterations >= maxConsecutiveToolIterations) {
+            log.debug(LogCategory.AGENT, 'Open Router tool choice override applied', {
+              provider: providerId,
+              consecutiveToolIterations,
+              toolChoice: 'none',
+              reason: 'Too many consecutive tool calls - forcing text response'
+            });
+          }
           
           // Log request details
           this.requestCount++;
@@ -415,14 +440,51 @@ When asked about your identity, you should identify yourself as a coding assista
             response.usage,
           );
           
+          // Enhanced debug logging for Open Router debugging
           log.debug(LogCategory.AGENT, 'API response received', {
+            provider: providerId,
+            providerName,
+            model: this.model,
             finishReason: response.choices[0].finish_reason,
             choiceCount: response.choices.length,
             duration,
-            usage: response.usage
+            usage: response.usage,
+            iteration: iteration + 1,
+            maxIterations
           });
           
           const message = response.choices[0].message;
+          
+          // Log detailed response analysis for debugging Open Router behavior
+          log.debug(LogCategory.AGENT, 'Response message analysis', {
+            provider: providerId,
+            hasContent: !!message.content,
+            contentLength: message.content?.length || 0,
+            hasToolCalls: !!message.tool_calls,
+            toolCallCount: message.tool_calls?.length || 0,
+            finishReason: response.choices[0].finish_reason,
+            reasoning: !!(message as any).reasoning
+          });
+          
+          // Log first 200 chars of content for debugging
+          if (message.content) {
+            log.debug(LogCategory.AGENT, 'Response content preview', {
+              provider: providerId,
+              contentPreview: message.content.substring(0, 200) + (message.content.length > 200 ? '...' : '')
+            });
+          }
+          
+          // Log tool call details if present
+          if (message.tool_calls) {
+            log.debug(LogCategory.AGENT, 'Tool calls in response', {
+              provider: providerId,
+              toolCalls: message.tool_calls.map(tc => ({
+                name: tc.function.name,
+                hasArguments: !!tc.function.arguments,
+                argumentsLength: tc.function.arguments?.length || 0
+              }))
+            });
+          }
           
           // Extract reasoning if present
           const reasoning = (message as any).reasoning;
@@ -439,12 +501,102 @@ When asked about your identity, you should identify yourself as a coding assista
           debugLog('Message has tool_calls:', !!message.tool_calls);
           debugLog('Message tool_calls count:', message.tool_calls?.length || 0);
           
-          if (response.choices[0].finish_reason !== 'stop' && response.choices[0].finish_reason !== 'tool_calls') {
-            debugLog('WARNING - Unexpected finish_reason:', response.choices[0].finish_reason);
+          // Enhanced finish_reason analysis for Open Router debugging
+          const finishReason = response.choices[0].finish_reason;
+          if (finishReason !== 'stop' && finishReason !== 'tool_calls') {
+            debugLog('WARNING - Unexpected finish_reason:', finishReason);
+            log.warn(LogCategory.AGENT, 'Unexpected finish_reason from provider', {
+              provider: providerId,
+              providerName,
+              model: this.model,
+              finishReason,
+              expectedReasons: ['stop', 'tool_calls'],
+              hasToolCalls: !!message.tool_calls,
+              hasContent: !!message.content,
+              iteration: iteration + 1,
+              consecutiveToolIterations,
+              isOpenRouter
+            });
+          } else {
+            log.debug(LogCategory.AGENT, 'Normal finish_reason received', {
+              provider: providerId,
+              finishReason,
+              hasToolCalls: !!message.tool_calls,
+              isOpenRouter
+            });
+          }
+          
+          // Special handling for Open Router responses that might be malformed
+          if (isOpenRouter) {
+            // Check for edge cases where Open Router might return tool_calls with finish_reason 'stop'
+            if (finishReason === 'stop' && message.tool_calls && message.tool_calls.length > 0) {
+              log.warn(LogCategory.AGENT, 'Open Router returned tool calls with finish_reason "stop" - potential API inconsistency', {
+                provider: providerId,
+                toolCallCount: message.tool_calls.length,
+                finishReason,
+                iteration: iteration + 1
+              });
+            }
+            
+            // Check for responses with neither content nor tool calls
+            if (!message.content && (!message.tool_calls || message.tool_calls.length === 0)) {
+              log.warn(LogCategory.AGENT, 'Open Router returned empty response - no content or tool calls', {
+                provider: providerId,
+                finishReason,
+                iteration: iteration + 1,
+                suggestion: 'This may cause the agent to hang waiting for a proper response'
+              });
+              
+              // Add a system message to help recover from empty responses
+              this.messages.push({
+                role: 'system',
+                content: 'Previous response was empty. Please provide a text response to the user or use appropriate tools to complete the task.'
+              });
+              iteration++;
+              continue;
+            }
           }
 
           // Handle tool calls if present
           if (message.tool_calls) {
+            // Track consecutive tool iterations for loop detection
+            consecutiveToolIterations++;
+            
+            // Add tool names to recent history
+            const currentToolNames = message.tool_calls.map(tc => tc.function.name);
+            recentToolCalls.push(...currentToolNames);
+            
+            // Keep only recent tool calls for pattern detection
+            if (recentToolCalls.length > toolCallHistorySize) {
+              recentToolCalls = recentToolCalls.slice(-toolCallHistorySize);
+            }
+            
+            log.debug(LogCategory.AGENT, 'Processing tool calls - continuing iteration loop', {
+              provider: providerId,
+              iteration: iteration + 1,
+              toolCallCount: message.tool_calls.length,
+              consecutiveToolIterations,
+              willContinueLoop: true,
+              currentTools: currentToolNames
+            });
+            
+            // Detect potential infinite loop patterns
+            if (consecutiveToolIterations >= maxConsecutiveToolIterations) {
+              log.warn(LogCategory.AGENT, 'Potential infinite tool calling loop detected', {
+                provider: providerId,
+                consecutiveToolIterations,
+                iteration: iteration + 1,
+                recentToolCalls: recentToolCalls.slice(-10), // Last 10 tools
+                suggestion: 'Model may be stuck in a tool calling loop - consider manual intervention'
+              });
+              
+              // Add a context message to help the model break out of the loop
+              this.messages.push({
+                role: 'system',
+                content: `Warning: You have made ${consecutiveToolIterations} consecutive tool calls. This may indicate you are stuck in a loop. Please provide a final response to the user instead of calling more tools, or explain what you need from the user to proceed.`
+              });
+            }
+            
             // Show thinking text or reasoning if present
             if (message.content || reasoning) {
               if (this.onThinkingText) {
@@ -491,11 +643,36 @@ When asked about your identity, you should identify yourself as a coding assista
             }
 
             // Continue loop to get model response to tool results
+            log.debug(LogCategory.AGENT, 'Tool execution complete - continuing to next iteration', {
+              provider: providerId,
+              currentIteration: iteration + 1,
+              nextIteration: iteration + 2,
+              conversationLength: this.messages.length
+            });
             iteration++;
             continue;
           }
 
           // No tool calls, this is the final response
+          // Reset consecutive tool counter since we got a final response
+          if (consecutiveToolIterations > 0) {
+            log.debug(LogCategory.AGENT, 'Tool calling sequence completed', {
+              provider: providerId,
+              totalConsecutiveToolCalls: consecutiveToolIterations,
+              iteration: iteration + 1
+            });
+            consecutiveToolIterations = 0;
+          }
+          
+          log.debug(LogCategory.AGENT, 'Final response detected - no tool calls present', {
+            provider: providerId,
+            iteration: iteration + 1,
+            finishReason: response.choices[0].finish_reason,
+            hasContent: !!message.content,
+            contentLength: message.content?.length || 0,
+            willExitLoop: true
+          });
+          
           const content = message.content || '';
           debugLog('Final response - no tool calls detected');
           debugLog('Final content length:', content.length);
@@ -503,9 +680,14 @@ When asked about your identity, you should identify yourself as a coding assista
           
           if (this.onFinalMessage) {
             debugLog('Calling onFinalMessage callback');
+            log.debug(LogCategory.AGENT, 'Calling onFinalMessage callback', {
+              provider: providerId,
+              hasReasoning: !!reasoning
+            });
             this.onFinalMessage(content, reasoning);
           } else {
             debugLog('No onFinalMessage callback set');
+            log.warn(LogCategory.AGENT, 'No onFinalMessage callback set - response may not be displayed');
           }
 
           // Add final response to conversation history
@@ -515,6 +697,11 @@ When asked about your identity, you should identify yourself as a coding assista
           });
 
           debugLog('Final response added to conversation history, exiting chat loop');
+          log.debug(LogCategory.AGENT, 'Chat loop completed successfully', {
+            provider: providerId,
+            totalIterations: iteration + 1,
+            conversationLength: this.messages.length
+          });
           this.currentAbortController = null; // Clear abort controller
           return; // Successfully completed, exit both loops
 

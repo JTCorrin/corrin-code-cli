@@ -17,30 +17,23 @@ async function startChat(
   logLevel?: LogLevel
 ): Promise<void> {
   console.log(chalk.hex('#FF4500')(`                             
-  ██████    ██████   ██████   ██████
- ███░░███░░███░░░██ ███░░███ ███░░███ 
-░███ ░███ ░███ ░░░ ░███ ░███░███ ░███ 
-░███ ░███ ░███     ░███ ░███░███ ░███ 
-░░███░███ ░███     ░░██████ ░░███░███ 
- ░░░░░███ ░░░░      ░░░░░░   ░░░░░███ 
- ██  ░███                        ░███ 
-░░██████                         ░███
- ░░░░░░                          ░░░ 
-                        ███          
-                      ░░███           
-  ██████   ██████   ███████   ██████  
- ███░░███ ███░░███ ███░░███  ███░░███ 
-░███ ░░░ ░███ ░███░███ ░███ ░███████  
-░███  ███░███ ░███░███ ░███ ░███░░░   
-░░██████ ░░██████ ░░███████ ░░██████  
- ░░░░░░   ░░░░░░   ░░░░░░░░  ░░░░░░   
+
+ ░▒▓██████▓▒░ ░▒▓██████▓▒░░▒▓███████▓▒░░▒▓███████▓▒░░▒▓█▓▒░▒▓███████▓▒░ ░▒▓██████▓▒░        ░▒▓██████▓▒░ ░▒▓██████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░        
+░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░        
+░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓███████▓▒░░▒▓███████▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓██████▓▒░   
+░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░        
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░        
+ ░▒▓██████▓▒░ ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓██████▓▒░        ░▒▓██████▓▒░ ░▒▓██████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░ 
+                                                                                                                                                 
+                                                                                                                                                  
 `));
 
   try {
     // Initialize .corrin directory
     const corrinPaths = initializeCorrinDirectory();
     const manager = getCorrinManager();
-    
+
     // Set up logging
     const logger = getLogger();
     if (logLevel !== undefined) {
@@ -60,9 +53,9 @@ async function startChat(
       corrinDir: corrinPaths.root,
       corrinSize: manager.getDirectorySizeFormatted()
     });
-    
+
     let defaultModel = 'moonshotai/kimi-k2-instruct';
-    
+
     // Create agent (API key will be checked on first message)
     const agent = await Agent.create(defaultModel, temperature, system, debug);
 
@@ -87,9 +80,9 @@ async function startChat(
 }
 
 program
-  .name('groq')
-  .description('Groq Code CLI')
-  .version('1.0.2')
+  .name('corrino')
+  .description('Corrino Code CLI')
+  .version('1.0.0')
   .option('-t, --temperature <temperature>', 'Temperature for generation', parseFloat, 1.0)
   .option('-s, --system <message>', 'Custom system message')
   .option('-d, --debug', 'Enable debug logging (equivalent to --log-level debug)')
@@ -98,7 +91,7 @@ program
   .action(async (options) => {
     // Parse log level
     let logLevel: LogLevel | undefined = undefined;
-    
+
     if (options.logs === false) {
       // --no-logs was used, disable logging
       logLevel = LogLevel.ERROR + 1; // Above ERROR level to disable all logging
