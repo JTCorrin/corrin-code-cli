@@ -3,6 +3,7 @@ import { validateReadBeforeEdit, getReadBeforeEditError } from '../tools/validat
 import { ALL_TOOL_SCHEMAS, DANGEROUS_TOOLS, APPROVAL_REQUIRED_TOOLS } from '../tools/tool-schemas.js';
 import { ConfigManager } from '../utils/local-settings.js';
 import { ProviderManager, BaseProvider, GroqProvider } from './providers/index.js';
+import { log, LogCategory } from '../utils/logger.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -147,8 +148,9 @@ When asked about your identity, you should identify yourself as a coding assista
     for (const [providerId, config] of Object.entries(customProviders)) {
       try {
         this.providerManager.registerProvider(providerId, config);
+        log.info(LogCategory.PROVIDER, `Provider registered: ${providerId}`, { name: config.name, type: config.type });
       } catch (error) {
-        debugLog(`Failed to register provider ${providerId}:`, error);
+        log.error(LogCategory.PROVIDER, `Failed to register provider ${providerId}`, { error });
       }
     }
     
@@ -221,8 +223,7 @@ When asked about your identity, you should identify yourself as a coding assista
   }
 
   public setApiKey(apiKey: string): void {
-    debugLog('Setting API key in agent...');
-    debugLog('API key provided:', apiKey ? `${apiKey.substring(0, 8)}...` : 'empty');
+    log.debug(LogCategory.AGENT, 'Setting API key in agent');
     
     if (this.currentProvider) {
       this.currentProvider.setApiKey(apiKey);
@@ -234,8 +235,9 @@ When asked about your identity, you should identify yourself as a coding assista
       } else {
         this.configManager.setProviderApiKey(providerId, apiKey);
       }
+      
+      log.info(LogCategory.AGENT, `API key set for provider: ${providerId}`);
     }
-    debugLog('API key set for current provider');
   }
 
   public saveApiKey(apiKey: string): void {
@@ -296,11 +298,11 @@ When asked about your identity, you should identify yourself as a coding assista
   }
 
   public interrupt(): void {
-    debugLog('Interrupting current request');
+    log.info(LogCategory.AGENT, 'User interrupting current request');
     this.isInterrupted = true;
     
     if (this.currentAbortController) {
-      debugLog('Aborting current API request');
+      log.debug(LogCategory.AGENT, 'Aborting current API request');
       this.currentAbortController.abort();
     }
     
@@ -341,7 +343,10 @@ When asked about your identity, you should identify yourself as a coding assista
       throw new Error(errorMsg);
     }
     
-    debugLog('Provider initialized successfully:', this.currentProvider.getName());
+    log.info(LogCategory.AGENT, `Provider initialized successfully: ${this.currentProvider.getName()}`, {
+      provider: this.currentProvider.getProviderId(),
+      model: this.model
+    });
 
     // Add user message
     this.messages.push({ role: 'user', content: userInput });
@@ -364,9 +369,12 @@ When asked about your identity, you should identify yourself as a coding assista
             throw new Error('No provider available');
           }
 
-          debugLog(`Making API call via ${this.currentProvider.getName()} with model: ${this.model}`);
-          debugLog('Messages count:', this.messages.length);
-          debugLog('Last few messages:', this.messages.slice(-3));
+          const startTime = Date.now();
+          log.debug(LogCategory.AGENT, `Making API call via ${this.currentProvider.getName()}`, {
+            model: this.model,
+            messageCount: this.messages.length,
+            hasTools: this.currentProvider.supportsTools()
+          });
           
           // Prepare request for provider
           const request = {
@@ -384,7 +392,12 @@ When asked about your identity, you should identify yourself as a coding assista
           
           // Log request details
           this.requestCount++;
-          debugLog('Request details:', request);
+          log.debug(LogCategory.AGENT, 'API request prepared', {
+            requestId: this.requestCount,
+            temperature: request.temperature,
+            maxTokens: request.max_tokens,
+            toolsEnabled: !!request.tools
+          });
           
           // Create AbortController for this request
           this.currentAbortController = new AbortController();
@@ -394,10 +407,20 @@ When asked about your identity, you should identify yourself as a coding assista
             this.currentAbortController.signal
           );
 
-          debugLog('Full API response received:', response);
-          debugLog('Response usage:', response.usage);
-          debugLog('Response finish_reason:', response.choices[0].finish_reason);
-          debugLog('Response choices length:', response.choices.length);
+          const duration = Date.now() - startTime;
+          log.api(
+            this.currentProvider.getName(),
+            this.model,
+            duration,
+            response.usage,
+          );
+          
+          log.debug(LogCategory.AGENT, 'API response received', {
+            finishReason: response.choices[0].finish_reason,
+            choiceCount: response.choices.length,
+            duration,
+            usage: response.usage
+          });
           
           const message = response.choices[0].message;
           
@@ -441,12 +464,13 @@ When asked about your identity, you should identify yourself as a coding assista
             for (const toolCall of message.tool_calls) {
               // Check for interruption before each tool execution
               if (this.isInterrupted) {
-                debugLog('Tool execution interrupted by user');
+                log.info(LogCategory.TOOL, 'Tool execution interrupted by user');
                 this.currentAbortController = null;
                 return;
               }
               
               const result = await this.executeToolCall(toolCall);
+              log.tool(toolCall.function.name, toolCall.function.arguments, result);
 
               // Add tool result to conversation (including rejected ones)
               this.messages.push({
@@ -508,10 +532,11 @@ When asked about your identity, you should identify yourself as a coding assista
             return;
           }
           
-          debugLog('Error occurred during API call:', error);
-          debugLog('Error details:', {
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : 'No stack available'
+          log.error(LogCategory.AGENT, 'API call failed', { 
+            provider: this.currentProvider?.getName(),
+            model: this.model,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
           });
           
           // Add API error as context message instead of terminating chat
@@ -675,7 +700,7 @@ When asked about your identity, you should identify yourself as a coding assista
 }
 
 
-// Debug logging to file
+// Legacy debug logging to file (kept for backward compatibility)
 const DEBUG_LOG_FILE = path.join(process.cwd(), 'debug-agent.log');
 let debugLogCleared = false;
 let debugEnabled = false;
@@ -692,5 +717,8 @@ function debugLog(message: string, data?: any) {
   const timestamp = new Date().toISOString();
   const logEntry = `[${timestamp}] ${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}\n`;
   fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
+  
+  // Also log to new system for consistency
+  log.debug(LogCategory.AGENT, message, data);
 }
 

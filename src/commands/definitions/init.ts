@@ -57,14 +57,14 @@ IMPORTANT: Follow these steps in order:
 2. **Then, analyze what you found:**
    - Use 'read_file' on README.md and any other documentation files
    - Read package.json and other configuration files (tsconfig.json, eslint configs, etc.)
-   - Check if CLAUDE.md exists and read it to understand the expected format
+   - Check if CORRIN.md exists and read it to understand the expected format
 
 3. **Explore the codebase architecture:**
    - Use 'search_files' to find main entry points, exports, and key patterns
    - Use 'read_file' on the main source files you discovered
    - Understand the folder structure and module organization
 
-4. **Finally, create CORRIN.md with these sections:**
+4. **Finally, create or update CORRIN.md with these sections:**
    - **Project Overview**: Brief description based on what you learned
    - **Architecture**: Key architectural patterns and structure  
    - **Development Commands**: All npm scripts found in package.json files
@@ -75,7 +75,7 @@ IMPORTANT: Follow these steps in order:
 
 Use 'create_file' to create CORRIN.md in the project root with all your findings.
 
-The goal is to create a guide similar to CLAUDE.md but tailored for this specific project, helping future AI assistants understand the codebase quickly and work effectively within it.`;
+The goal is to create a guide tailored for this specific project, helping future AI assistants understand the codebase quickly and work effectively within it.`;
 
       await sendMessage(analysisPrompt);
     } else {

@@ -10,18 +10,25 @@ interface TokenMetricsProps {
   completionTokens: number;
 }
 
-export default function TokenMetrics({ 
+export default function TokenMetrics({
   isActive,
   isPaused,
-  startTime, 
+  startTime,
   endTime,
   pausedTime,
   completionTokens
 }: TokenMetricsProps) {
   const [displayTime, setDisplayTime] = useState('0.0s');
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  
-  const loadingMessages = ['GroqThinking', 'GroqMaxxing', 'GroqCoding'];
+
+  const loadingMessages = [
+    'I must not fear. Fear is the mind-killer.',
+    'Many machines on Ix...',
+    'By God he is the Kwiszatz Haderach!',
+    'The spice must flow.',
+    'The sleeper must awaken.',
+    'He who controls the spice controls the universe.',
+  ];
 
   // Update the display time every 100ms when active and not paused
   useEffect(() => {
@@ -42,7 +49,7 @@ export default function TokenMetrics({
 
     // Update immediately, then set interval
     updateDisplay();
-    
+
     const interval = setInterval(updateDisplay, 100);
     return () => clearInterval(interval);
   }, [isActive, isPaused, startTime, pausedTime]);
@@ -61,7 +68,7 @@ export default function TokenMetrics({
     }
 
     const interval = setInterval(() => {
-      setLoadingMessageIndex((prevIndex) => 
+      setLoadingMessageIndex((prevIndex) =>
         (prevIndex + 1) % loadingMessages.length
       );
     }, 2000);
@@ -98,9 +105,9 @@ export default function TokenMetrics({
         <Text color="cyan">{getElapsedTime()}</Text>
         <Text color="green">{completionTokens} tokens</Text>
         {(isActive || isPaused) && (
-            <Text color={isPaused ? 'yellow' : 'blue'}>
-              {getStatusText()}
-            </Text>
+          <Text color={isPaused ? 'yellow' : 'blue'}>
+            {getStatusText()}
+          </Text>
         )}
       </Box>
     </Box>

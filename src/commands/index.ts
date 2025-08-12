@@ -5,6 +5,7 @@ import { modelCommand } from './definitions/model.js';
 import { clearCommand } from './definitions/clear.js';
 import { reasoningCommand } from './definitions/reasoning.js';
 import { initCommand } from './definitions/init.js';
+import { log } from '../utils/logger.js';
 
 const availableCommands: CommandDefinition[] = [
   helpCommand,
@@ -43,7 +44,15 @@ export async function handleSlashCommand(
   });
   
   if (commandDef) {
-    await commandDef.handler(context, args);
+    log.command(cmd, args, true);
+    try {
+      await commandDef.handler(context, args);
+    } catch (error) {
+      log.command(cmd, args, false);
+      throw error;
+    }
+  } else {
+    log.command(cmd, args, false);
   }
 }
 
