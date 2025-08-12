@@ -125,6 +125,8 @@ export class ConfigManager {
   public getProviders(): Record<string, ProviderConfig> {
     try {
       if (!fs.existsSync(this.providersPath)) {
+        // Create providers.json with default structure if it doesn't exist
+        this.ensureProvidersFile();
         return {};
       }
 
@@ -139,6 +141,19 @@ export class ConfigManager {
     } catch (error) {
       console.warn('Failed to read providers config:', error);
       return {};
+    }
+  }
+
+  private ensureProvidersFile(): void {
+    try {
+      this.ensureConfigDir();
+      
+      const defaultProvidersData = { providers: {} };
+      fs.writeFileSync(this.providersPath, JSON.stringify(defaultProvidersData, null, 2), {
+        mode: 0o600 // Read/write for owner only
+      });
+    } catch (error) {
+      console.warn('Failed to create default providers.json:', error);
     }
   }
 

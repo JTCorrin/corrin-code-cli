@@ -7,6 +7,7 @@ import { Agent } from './agent.js';
 import App from '../ui/App.js';
 import { initializeCorrinDirectory, getCorrinManager } from '../utils/corrin-dir.js';
 import { getLogger, setLogLevel, LogLevel, LogCategory } from '../utils/logger.js';
+import { ConfigManager } from '../utils/local-settings.js';
 
 const program = new Command();
 
@@ -33,6 +34,10 @@ async function startChat(
     // Initialize .corrin directory
     const corrinPaths = initializeCorrinDirectory();
     const manager = getCorrinManager();
+
+    // Initialize providers.json in $HOME/.corrin on startup
+    const configManager = new ConfigManager();
+    configManager.getProviders(); // This will create providers.json if it doesn't exist
 
     // Set up logging
     const logger = getLogger();

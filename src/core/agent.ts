@@ -44,7 +44,7 @@ export class Agent {
     this.temperature = temperature;
     this.configManager = new ConfigManager();
     this.providerManager = new ProviderManager();
-    
+
     // Set debug mode
     debugEnabled = debug || false;
 
@@ -57,7 +57,7 @@ export class Agent {
 
     // Add system message to conversation
     this.messages.push({ role: 'system', content: this.systemMessage });
-    
+
     // Initialize providers
     this.initializeProviders();
   }
@@ -72,17 +72,17 @@ export class Agent {
     const configManager = new ConfigManager();
     const defaultModel = configManager.getDefaultModel();
     const selectedModel = defaultModel || model;
-    
+
     const agent = new Agent(
       selectedModel,
       temperature,
       systemMessage,
       debug
     );
-    
+
     // Set current provider based on model
     await agent.setModelAndProvider(selectedModel);
-    
+
     return agent;
   }
 
@@ -133,6 +133,8 @@ IMPORTANT: When creating files, keep them focused and reasonably sized. For larg
 2. Create separate files for different components
 3. Build incrementally rather than generating massive files at once
 
+IMPORTANT: At the outset of your interaction, you should search for and read the CORRIN.md file. If it exists it will provide you important an important overview of the repo.
+
 Be direct and efficient.
 
 Don't generate markdown tables.
@@ -143,7 +145,7 @@ When asked about your identity, you should identify yourself as a coding assista
   private initializeProviders(): void {
     // Load custom providers from config
     const customProviders = this.configManager.getProviders();
-    
+
     // Register custom providers
     for (const [providerId, config] of Object.entries(customProviders)) {
       try {
@@ -153,7 +155,7 @@ When asked about your identity, you should identify yourself as a coding assista
         log.error(LogCategory.PROVIDER, `Failed to register provider ${providerId}`, { error });
       }
     }
-    
+
     // Always ensure default Groq provider exists
     if (!this.providerManager.getProvider('groq')) {
       this.providerManager.registerProvider('groq', {
@@ -167,7 +169,7 @@ When asked about your identity, you should identify yourself as a coding assista
   private async setModelAndProvider(modelId: string): Promise<void> {
     // Find provider that has this model
     const provider = this.providerManager.findProviderForModel(modelId);
-    
+
     if (!provider) {
       // If no provider found, assume it's a Groq model and add it to the default provider
       const groqProvider = this.providerManager.getProvider('groq');
@@ -179,25 +181,25 @@ When asked about your identity, you should identify yourself as a coding assista
     } else {
       this.currentProvider = provider;
     }
-    
+
     // Set API key for the current provider
     await this.initializeProviderApiKey();
   }
-  
+
   private async initializeProviderApiKey(): Promise<void> {
     if (!this.currentProvider) return;
-    
+
     const providerId = this.currentProvider.getProviderId();
-    
+
     // Try environment variable first, then config
     let apiKey: string | null = null;
-    
+
     if (providerId === 'groq') {
       apiKey = process.env.GROQ_API_KEY || this.configManager.getApiKey();
     } else {
       apiKey = this.configManager.getProviderApiKey(providerId);
     }
-    
+
     if (apiKey) {
       this.currentProvider.setApiKey(apiKey);
     }
@@ -224,18 +226,18 @@ When asked about your identity, you should identify yourself as a coding assista
 
   public setApiKey(apiKey: string): void {
     log.debug(LogCategory.AGENT, 'Setting API key in agent');
-    
+
     if (this.currentProvider) {
       this.currentProvider.setApiKey(apiKey);
       const providerId = this.currentProvider.getProviderId();
-      
+
       // Save to appropriate config location
       if (providerId === 'groq') {
         this.configManager.setApiKey(apiKey);
       } else {
         this.configManager.setProviderApiKey(providerId, apiKey);
       }
-      
+
       log.info(LogCategory.AGENT, `API key set for provider: ${providerId}`);
     }
   }
@@ -248,7 +250,7 @@ When asked about your identity, you should identify yourself as a coding assista
     if (this.currentProvider) {
       const providerId = this.currentProvider.getProviderId();
       this.currentProvider.setApiKey(null);
-      
+
       // Clear from appropriate config location
       if (providerId === 'groq') {
         this.configManager.clearApiKey();
@@ -267,10 +269,10 @@ When asked about your identity, you should identify yourself as a coding assista
     this.model = model;
     // Save as default model
     this.configManager.setDefaultModel(model);
-    
+
     // Switch to appropriate provider
     await this.setModelAndProvider(model);
-    
+
     // Update system message to reflect new model and provider
     const newSystemMessage = this.buildDefaultSystemMessage();
     this.systemMessage = newSystemMessage;
@@ -300,12 +302,12 @@ When asked about your identity, you should identify yourself as a coding assista
   public interrupt(): void {
     log.info(LogCategory.AGENT, 'User interrupting current request');
     this.isInterrupted = true;
-    
+
     if (this.currentAbortController) {
       log.debug(LogCategory.AGENT, 'Aborting current API request');
       this.currentAbortController.abort();
     }
-    
+
     // Add interruption message to conversation
     this.messages.push({
       role: 'system',
@@ -316,19 +318,19 @@ When asked about your identity, you should identify yourself as a coding assista
   async chat(userInput: string): Promise<void> {
     // Reset interrupt flag at the start of a new chat
     this.isInterrupted = false;
-    
+
     // Check if current provider is available and has API key
     if (!this.currentProvider) {
       await this.setModelAndProvider(this.model);
     }
-    
+
     if (!this.currentProvider) {
       throw new Error('No provider available for the current model.');
     }
-    
+
     // Initialize API key for provider if not already set
     await this.initializeProviderApiKey();
-    
+
     // Check provider status
     const status = await this.currentProvider.checkStatus();
     if (!status.connected) {
@@ -342,7 +344,7 @@ When asked about your identity, you should identify yourself as a coding assista
       }
       throw new Error(errorMsg);
     }
-    
+
     log.info(LogCategory.AGENT, `Provider initialized successfully: ${this.currentProvider.getName()}`, {
       provider: this.currentProvider.getProviderId(),
       model: this.model
@@ -353,7 +355,7 @@ When asked about your identity, you should identify yourself as a coding assista
 
     const maxIterations = 50;
     let iteration = 0;
-    
+
     // Response loop detection to prevent infinite tool calling
     let consecutiveToolIterations = 0;
     let recentToolCalls: string[] = [];
@@ -368,7 +370,7 @@ When asked about your identity, you should identify yourself as a coding assista
           this.currentAbortController = null;
           return;
         }
-        
+
         try {
           // Check provider exists
           if (!this.currentProvider) {
@@ -379,16 +381,16 @@ When asked about your identity, you should identify yourself as a coding assista
           // Get provider info for logging and provider-specific handling
           const providerId = this.currentProvider.getProviderId();
           const providerName = this.currentProvider.getName();
-          
+
           log.debug(LogCategory.AGENT, `Making API call via ${providerName}`, {
             model: this.model,
             messageCount: this.messages.length,
             hasTools: this.currentProvider.supportsTools()
           });
-          
+
           // Prepare request for provider with provider-specific adjustments
           const isOpenRouter = providerId === 'openrouter' || providerName.toLowerCase().includes('openrouter');
-          
+
           const request = {
             model: this.model,
             messages: this.messages,
@@ -399,12 +401,12 @@ When asked about your identity, you should identify yourself as a coding assista
             ...(this.currentProvider.supportsTools() ? {
               tools: ALL_TOOL_SCHEMAS,
               // Use 'none' tool choice for Open Router after many consecutive tool calls to force text response
-              tool_choice: (isOpenRouter && consecutiveToolIterations >= maxConsecutiveToolIterations) 
-                ? 'none' as const 
+              tool_choice: (isOpenRouter && consecutiveToolIterations >= maxConsecutiveToolIterations)
+                ? 'none' as const
                 : 'auto' as const
             } : {})
           };
-          
+
           // Log provider-specific adjustments
           if (isOpenRouter && consecutiveToolIterations >= maxConsecutiveToolIterations) {
             log.debug(LogCategory.AGENT, 'Open Router tool choice override applied', {
@@ -414,7 +416,7 @@ When asked about your identity, you should identify yourself as a coding assista
               reason: 'Too many consecutive tool calls - forcing text response'
             });
           }
-          
+
           // Log request details
           this.requestCount++;
           log.debug(LogCategory.AGENT, 'API request prepared', {
@@ -423,10 +425,10 @@ When asked about your identity, you should identify yourself as a coding assista
             maxTokens: request.max_tokens,
             toolsEnabled: !!request.tools
           });
-          
+
           // Create AbortController for this request
           this.currentAbortController = new AbortController();
-          
+
           const response = await this.currentProvider.createChatCompletion(
             request,
             this.currentAbortController.signal
@@ -439,7 +441,7 @@ When asked about your identity, you should identify yourself as a coding assista
             duration,
             response.usage,
           );
-          
+
           // Enhanced debug logging for Open Router debugging
           log.debug(LogCategory.AGENT, 'API response received', {
             provider: providerId,
@@ -452,9 +454,9 @@ When asked about your identity, you should identify yourself as a coding assista
             iteration: iteration + 1,
             maxIterations
           });
-          
+
           const message = response.choices[0].message;
-          
+
           // Log detailed response analysis for debugging Open Router behavior
           log.debug(LogCategory.AGENT, 'Response message analysis', {
             provider: providerId,
@@ -465,7 +467,7 @@ When asked about your identity, you should identify yourself as a coding assista
             finishReason: response.choices[0].finish_reason,
             reasoning: !!(message as any).reasoning
           });
-          
+
           // Log first 200 chars of content for debugging
           if (message.content) {
             log.debug(LogCategory.AGENT, 'Response content preview', {
@@ -473,7 +475,7 @@ When asked about your identity, you should identify yourself as a coding assista
               contentPreview: message.content.substring(0, 200) + (message.content.length > 200 ? '...' : '')
             });
           }
-          
+
           // Log tool call details if present
           if (message.tool_calls) {
             log.debug(LogCategory.AGENT, 'Tool calls in response', {
@@ -485,10 +487,10 @@ When asked about your identity, you should identify yourself as a coding assista
               }))
             });
           }
-          
+
           // Extract reasoning if present
           const reasoning = (message as any).reasoning;
-          
+
           // Pass usage data to callback if available
           if (response.usage && this.onApiUsage) {
             this.onApiUsage({
@@ -500,7 +502,7 @@ When asked about your identity, you should identify yourself as a coding assista
           debugLog('Message content length:', message.content?.length || 0);
           debugLog('Message has tool_calls:', !!message.tool_calls);
           debugLog('Message tool_calls count:', message.tool_calls?.length || 0);
-          
+
           // Enhanced finish_reason analysis for Open Router debugging
           const finishReason = response.choices[0].finish_reason;
           if (finishReason !== 'stop' && finishReason !== 'tool_calls') {
@@ -525,7 +527,7 @@ When asked about your identity, you should identify yourself as a coding assista
               isOpenRouter
             });
           }
-          
+
           // Special handling for Open Router responses that might be malformed
           if (isOpenRouter) {
             // Check for edge cases where Open Router might return tool_calls with finish_reason 'stop'
@@ -537,7 +539,7 @@ When asked about your identity, you should identify yourself as a coding assista
                 iteration: iteration + 1
               });
             }
-            
+
             // Check for responses with neither content nor tool calls
             if (!message.content && (!message.tool_calls || message.tool_calls.length === 0)) {
               log.warn(LogCategory.AGENT, 'Open Router returned empty response - no content or tool calls', {
@@ -546,7 +548,7 @@ When asked about your identity, you should identify yourself as a coding assista
                 iteration: iteration + 1,
                 suggestion: 'This may cause the agent to hang waiting for a proper response'
               });
-              
+
               // Add a system message to help recover from empty responses
               this.messages.push({
                 role: 'system',
@@ -561,16 +563,16 @@ When asked about your identity, you should identify yourself as a coding assista
           if (message.tool_calls) {
             // Track consecutive tool iterations for loop detection
             consecutiveToolIterations++;
-            
+
             // Add tool names to recent history
             const currentToolNames = message.tool_calls.map(tc => tc.function.name);
             recentToolCalls.push(...currentToolNames);
-            
+
             // Keep only recent tool calls for pattern detection
             if (recentToolCalls.length > toolCallHistorySize) {
               recentToolCalls = recentToolCalls.slice(-toolCallHistorySize);
             }
-            
+
             log.debug(LogCategory.AGENT, 'Processing tool calls - continuing iteration loop', {
               provider: providerId,
               iteration: iteration + 1,
@@ -579,7 +581,7 @@ When asked about your identity, you should identify yourself as a coding assista
               willContinueLoop: true,
               currentTools: currentToolNames
             });
-            
+
             // Detect potential infinite loop patterns
             if (consecutiveToolIterations >= maxConsecutiveToolIterations) {
               log.warn(LogCategory.AGENT, 'Potential infinite tool calling loop detected', {
@@ -589,14 +591,14 @@ When asked about your identity, you should identify yourself as a coding assista
                 recentToolCalls: recentToolCalls.slice(-10), // Last 10 tools
                 suggestion: 'Model may be stuck in a tool calling loop - consider manual intervention'
               });
-              
+
               // Add a context message to help the model break out of the loop
               this.messages.push({
                 role: 'system',
                 content: `Warning: You have made ${consecutiveToolIterations} consecutive tool calls. This may indicate you are stuck in a loop. Please provide a final response to the user instead of calling more tools, or explain what you need from the user to proceed.`
               });
             }
-            
+
             // Show thinking text or reasoning if present
             if (message.content || reasoning) {
               if (this.onThinkingText) {
@@ -620,7 +622,7 @@ When asked about your identity, you should identify yourself as a coding assista
                 this.currentAbortController = null;
                 return;
               }
-              
+
               const result = await this.executeToolCall(toolCall);
               log.tool(toolCall.function.name, toolCall.function.arguments, result);
 
@@ -663,7 +665,7 @@ When asked about your identity, you should identify yourself as a coding assista
             });
             consecutiveToolIterations = 0;
           }
-          
+
           log.debug(LogCategory.AGENT, 'Final response detected - no tool calls present', {
             provider: providerId,
             iteration: iteration + 1,
@@ -672,12 +674,12 @@ When asked about your identity, you should identify yourself as a coding assista
             contentLength: message.content?.length || 0,
             willExitLoop: true
           });
-          
+
           const content = message.content || '';
           debugLog('Final response - no tool calls detected');
           debugLog('Final content length:', content.length);
           debugLog('Final content preview:', content.substring(0, 200));
-          
+
           if (this.onFinalMessage) {
             debugLog('Calling onFinalMessage callback');
             log.debug(LogCategory.AGENT, 'Calling onFinalMessage callback', {
@@ -707,7 +709,7 @@ When asked about your identity, you should identify yourself as a coding assista
 
         } catch (error) {
           this.currentAbortController = null; // Clear abort controller
-          
+
           // Check if this is an abort error due to user interruption
           if (error instanceof Error && (
             error.message.includes('Request was aborted') ||
@@ -718,18 +720,18 @@ When asked about your identity, you should identify yourself as a coding assista
             // Don't add error message if it's an interruption - the interrupt message was already added
             return;
           }
-          
-          log.error(LogCategory.AGENT, 'API call failed', { 
+
+          log.error(LogCategory.AGENT, 'API call failed', {
             provider: this.currentProvider?.getName(),
             model: this.model,
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined
           });
-          
+
           // Add API error as context message instead of terminating chat
           let errorMessage = 'Unknown error occurred';
           let is401Error = false;
-          
+
           if (error instanceof Error) {
             // Check if it's an API error with more details
             if ('status' in error && 'error' in error) {
@@ -749,18 +751,18 @@ When asked about your identity, you should identify yourself as a coding assista
           } else {
             errorMessage = `Error: ${String(error)}`;
           }
-          
+
           // For 401 errors (invalid API key), don't retry - terminate immediately
           if (is401Error) {
             throw new Error(`${errorMessage}. Please check your API key and use /login to set a valid key.`);
           }
-          
+
           // Add error context to conversation for model to see and potentially recover
           this.messages.push({
             role: 'system',
             content: `Previous API request failed with error: ${errorMessage}. Please try a different approach or ask the user for clarification.`
           });
-          
+
           // Continue conversation loop to let model attempt recovery
           iteration++;
           continue;
@@ -823,13 +825,13 @@ When asked about your identity, you should identify yourself as a coding assista
       const isDangerous = DANGEROUS_TOOLS.includes(toolName);
       const requiresApproval = APPROVAL_REQUIRED_TOOLS.includes(toolName);
       const needsApproval = isDangerous || requiresApproval;
-      
+
       // For APPROVAL_REQUIRED_TOOLS, check if session auto-approval is enabled
       const canAutoApprove = requiresApproval && !isDangerous && this.sessionAutoApprove;
-            
+
       if (needsApproval && !canAutoApprove) {
         let approvalResult: { approved: boolean; autoApproveSession?: boolean };
-        
+
         if (this.onToolApproval) {
           // Check for interruption before waiting for approval
           if (this.isInterrupted) {
@@ -839,9 +841,9 @@ When asked about your identity, you should identify yourself as a coding assista
             }
             return result;
           }
-          
+
           approvalResult = await this.onToolApproval(toolName, toolArgs);
-          
+
           // Check for interruption after approval process
           if (this.isInterrupted) {
             const result = { error: 'Tool execution interrupted by user', success: false, userRejected: true };
@@ -854,12 +856,12 @@ When asked about your identity, you should identify yourself as a coding assista
           // No approval callback available, reject by default
           approvalResult = { approved: false };
         }
-        
+
         // Enable session auto-approval if requested (only for APPROVAL_REQUIRED_TOOLS)
         if (approvalResult.autoApproveSession && requiresApproval && !isDangerous) {
           this.sessionAutoApprove = true;
         }
-        
+
         if (!approvalResult.approved) {
           const result = { error: 'Tool execution canceled by user', success: false, userRejected: true };
           if (this.onToolEnd) {
@@ -868,7 +870,7 @@ When asked about your identity, you should identify yourself as a coding assista
           return result;
         }
       }
-    
+
       // Execute tool
       const result = await executeTool(toolName, toolArgs);
 
@@ -894,17 +896,17 @@ let debugEnabled = false;
 
 function debugLog(message: string, data?: any) {
   if (!debugEnabled) return;
-  
+
   // Clear log file on first debug log of each session
   if (!debugLogCleared) {
     fs.writeFileSync(DEBUG_LOG_FILE, '');
     debugLogCleared = true;
   }
-  
+
   const timestamp = new Date().toISOString();
   const logEntry = `[${timestamp}] ${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}\n`;
   fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
-  
+
   // Also log to new system for consistency
   log.debug(LogCategory.AGENT, message, data);
 }
