@@ -1,9 +1,9 @@
 <h2 align="center">
  <br>
- <img src="docs/thumbnail.png" alt="Groq Code CLI" width="400">
+ <img src="docs/thumbnail.png" alt="Corrino Code CLI" width="400">
  <br>
  <br>
- Groq Code CLI: A highly customizable, lightweight, and open-source coding CLI powered by Groq for instant iteration.
+ Corrino Code CLI: a fork of Groq Code CLI but with more open source and more Dune.
  <br>
 </h2>
 
@@ -23,33 +23,26 @@
 
 <br>
 
-https://github.com/user-attachments/assets/5902fd07-1882-4ee7-825b-50d627f8c96a
-
-<br>
 
 # Overview
 
-Coding CLIs are everywhere. The Groq Code CLI is different. It is a blueprint, a building block, for developers looking to leverage, customize, and extend a CLI to be entirely their own. Leading open-source CLIs are all fantastic, inspiring for the open-source community, and hugely rich in features. However, that's just it: they are *gigantic*. Feature-rich: yes, but local development with such a large and interwoven codebase is unfriendly and overwhelming. **This is a project for developers looking to dive in.**
+Thanks to the awesome open source project from the Groq team, and of course the encouragement to do with it as you want, I present you Corrino Code. It adds on to the original code by:
 
-Groq Code CLI is your chance to make a CLI truly your own. Equipped with all of the features, tools, commands, and UI/UX that’s familiar to your current favorite CLI, we make it simple to add new features you’ve always wanted. By massively cutting down on bloat and code mass without compromising on quality, you can jump into modifying this CLI however you see fit. By leveraging models on Groq, you can iterate even faster (`/models` to see available models). Simply activate the CLI by typing `groq` in your terminal. Use Groq Code CLI in any directory just like you would with any other coding CLI. Use it in this directory to have it build and customize itself!
-
-A few customization ideas to get started:
-- New slash commands (e.g. /mcp, /deadcode, /complexity, etc.)
-- Additional tools (e.g. web search, merge conflict resolver, knowledge graph builder, etc.)
-- Custom start-up ASCII art
-- Change the start-up command
-- Anything you can think of!
+- allowing you to add custom providers (like Ollama, LMStudio, OpenRouter)
+- adding an /init command which will generate a CORRIN.md file
+- extends the logging capabilities and adds logs at project level for a more accessible view on the agents actions
+- provides epic quotes from Dune by Frank Herbert as it works (this alone should be reason enough to use this)
 
 
 ## Installation
 
 ### For Development (Recommended)
 ```bash
-git clone https://github.com/build-with-groq/groq-code-cli.git
-cd groq-code-cli
+git clone https://github.com/jtcorrin/corrin-code-cli.git
+cd corrin-code-cli
 npm install
 npm run build
-npm link        # Enables the `groq` command in any directory
+npm link        # Enables the `corrino` command in any directory
 ```
 
 ```bash
@@ -57,15 +50,13 @@ npm link        # Enables the `groq` command in any directory
 npm run dev  
 ```
 
-### To Try it Out
-```bash
-npx groq-code-cli@latest
-```
-
 ## Usage
 ```bash
 # Start chat session
-groq
+corrino
+
+# Start a chat session with juicy logs
+corrino -d
 ```
 
 ### Command Line Options
@@ -81,12 +72,12 @@ Options:
   -V, --version                 Display version number
 ```
 
-### Authentication
+### Authentication (from the original groq)
 
 On first use, start a chat:
 
 ```bash
-groq
+corrino
 ```
 
 And type the `/login` command:
@@ -107,62 +98,8 @@ export GROQ_API_KEY=your_api_key_here
 - `/model` - Select your Groq model
 - `/clear` - Clear chat history and context
 - `/reasoning` - Toggle display of reasoning content in messages
+- `/init` - allow the agent to gain an understanding of the project, which is saved in a CORRIN.md file and drawn upon in future sessions
 
-
-## Development
-
-### Testing Locally
-```bash
-# Run this in the background during development to automatically apply any changes to the source code
-npm run dev  
-```
-
-### Available Scripts
-```bash
-npm run build      # Build TypeScript to dist/
-npm run dev        # Build in watch mode
-```
-
-### Project Structure
-
-```
-groq-code-cli/
-├── src/
-│   ├── commands/           
-│   │   ├── definitions/        # Individual command implementations
-│   │   │   ├── clear.ts        # Clear chat history command
-│   │   │   ├── help.ts         # Help command
-│   │   │   ├── login.ts        # Authentication command
-│   │   │   ├── model.ts        # Model selection command
-│   │   │   └── reasoning.ts    # Reasoning toggle command
-│   │   ├── base.ts             # Base command interface
-│   │   └── index.ts            # Command exports
-│   ├── core/               
-│   │   ├── agent.ts            # AI agent implementation
-│   │   └── cli.ts              # CLI entry point and setup
-│   ├── tools/              
-│   │   ├── tool-schemas.ts     # Tool schema definitions
-│   │   ├── tools.ts            # Tool implementations
-│   │   └── validators.ts       # Input validation utilities
-│   ├── ui/                 
-│   │   ├── App.tsx             # Main application component
-│   │   ├── components/     
-│   │   │   ├── core/           # Core chat TUI components
-│   │   │   ├── display/        # Auxiliary components for TUI display
-│   │   │   └── input-overlays/ # Input overlays and modals that occupy the MessageInput box
-│   │   └── hooks/          
-│   └── utils/              
-│       ├── constants.ts        # Application constants
-│       ├── file-ops.ts         # File system operations
-│       ├── local-settings.ts   # Local configuration management
-│       └── markdown.ts         # Markdown processing utilities
-├── docs/                   
-├── package.json    
-├── tsconfig.json        
-└── LICENSE          
-```
-
-**TL;DR:** Start with `src/core/cli.ts` (main entry point), `src/core/agent.ts`, and `src/ui/hooks/useAgent.ts` (bridge between TUI and the agent). Tools are in `src/tools/`, slash commands are in `src/commands/definitions/`, and customize the TUI in `src/ui/components/`.
 
 ### Customization
 
