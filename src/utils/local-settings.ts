@@ -9,7 +9,7 @@ interface Config {
   providers?: Record<string, ProviderConfig>;
 }
 
-const CONFIG_DIR = '.groq'; // In home directory
+const CONFIG_DIR = '.corrin'; // In home directory
 const CONFIG_FILE = 'local-settings.json';
 const PROVIDERS_FILE = 'providers.json';
 
